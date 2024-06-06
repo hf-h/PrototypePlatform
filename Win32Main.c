@@ -108,6 +108,8 @@ void ApplicationLoop(HWND winHandle, AL *sysAlloc, i64 targetFps) {
         color[i] = 0xFFEAEAEA;
     }
 
+    R2dTarget renderTarget;
+
     MSG msg;
     while (Running) {
 
@@ -118,11 +120,12 @@ void ApplicationLoop(HWND winHandle, AL *sysAlloc, i64 targetFps) {
             WinMsgCallback(msg.hwnd, msg.message, msg.wParam, msg.lParam);
         }
 
-        R2dClearSurface(&RenderSurface, 0xFFAAFFAA);
+        renderTarget = R2dTargetFromSurface(&RenderSurface);
 
-        R2dRenderSquare(&RenderSurface, 10, 10, color, 100, 100);
-
-        R2dClearSquare(&RenderSurface, 500, 400, 0xFFEE0000, 300, 300);
+        // Render test
+        R2dClearTarget(&renderTarget, 0xFFAAFFAA);
+        R2dRenderSquare(&renderTarget, 10, 10, color, 100, 100);
+        R2dClearSquare(&renderTarget, 500, 400, 0xFFEE0000, 300, 300);
 
         ApplicationPaint(winHandle);
         

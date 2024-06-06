@@ -15,6 +15,24 @@ typedef struct R2dSurface {
     AL          *allocator;
 } R2dSurface;
 
+typedef struct R2dTarget {
+    usize size;
+    u32 *data;
+    
+    u32 height;
+    u32 width;
+} R2dTarget;
+
+R2dTarget R2dTargetFromSurface(R2dSurface *rs) {
+    R2dTarget rt;
+    rt.data = (u32 *)rs->bmpData;
+    rt.size = rs->bmpDataSize;
+    rt.width = (u32)rs->bmpWidth;
+    rt.height = (u32)rs->bmpHeight;
+
+    return rt;
+}
+
 void R2dDelTestRenderSurface(R2dSurface *rs) {
     Free(rs->allocator, rs->bmpData, rs->bmpDataSize);
 }
@@ -53,32 +71,32 @@ void R2dPaintWindow(R2dSurface *rs, HDC deviceContext, RECT *windowRect) {
                   DIB_RGB_COLORS, SRCCOPY);
 }
 
-void R2dClearSurface(R2dSurface *rs, u32 ARGB) {
-    for (usize i = 0; i < rs->bmpWidth * rs->bmpHeight; i++) {
-        ((u32 *)rs->bmpData)[i] = ARGB;
+void R2dClearTarget(R2dTarget *rt, u32 ARGB) {
+    for (usize i = 0; i < rt->width * rt->height; i++) {
+        rt->data[i] = ARGB;
     }
 }
 
-void R2dClearSquare(R2dSurface *rs, i32 topLeftX, i32 topLeftY, u32 ARGB, i32 width, i32 height) {
-    i32 scStart = topLeftX + (rs->bmpWidth * topLeftY);
+void R2dClearSquare(R2dTarget *rt, i32 topLeftX, i32 topLeftY, u32 ARGB, i32 width, i32 height) {
+    i32 scStart = topLeftX + (rt->width * topLeftY);
 
-    i32 surfaceW = rs->bmpWidth;
-    i32 surfaceH = rs->bmpHeight;
+    i32 surfaceW = rt->width;
+    i32 surfaceH = rt->height;
 
     for (i32 i = 0; i < width * height; i++) {
         i32 sqX = i % width;
         i32 sqY = i / width;
         i32 currPixPos = scStart + sqX + (sqY * surfaceW);
 
-        ((u32 *)rs->bmpData)[currPixPos] = ARGB;
+        rt->data[currPixPos] = ARGB;
     }
 }
 
-void R2dRenderSquare(R2dSurface *rs, i32 topLeftX, i32 topLeftY, u32 *colorData, i32 width, i32 height) {
-    i32 scStart = topLeftX + (rs->bmpWidth * topLeftY);
+void R2dRenderSquare(R2dTarget *rt, i32 topLeftX, i32 topLeftY, u32 *colorData, i32 width, i32 height) {
+    i32 scStart = topLeftX + (rt->width * topLeftY);
 
-    i32 surfaceW = rs->bmpWidth;
-    i32 surfaceH = rs->bmpHeight;
+    i32 surfaceW = rt->width;
+    i32 surfaceH = rt->height;
 
     for (i32 i = 0; i < width * height; i++) {
         i32 sqX = i % width;
@@ -86,6 +104,6 @@ void R2dRenderSquare(R2dSurface *rs, i32 topLeftX, i32 topLeftY, u32 *colorData,
         i32 currPixPos = scStart + sqX + (sqY * surfaceW);
 
         u32 c = colorData[i];
-        ((u32 *)rs->bmpData)[currPixPos] = c;
+        rt->data[currPixPos] = c;
     }
 }
