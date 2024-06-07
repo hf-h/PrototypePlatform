@@ -2,4 +2,5 @@
 *.ilk
 *.pdb
 *.obj
+*.bmp
 .vs/
