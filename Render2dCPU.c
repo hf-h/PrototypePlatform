@@ -23,6 +23,17 @@ typedef struct R2dTarget {
     u32 width;
 } R2dTarget;
 
+BOOL _PixelOnSurface(u32 sWidth, u32  sHeight, i32 pixX, i32 pixY) {
+    if (pixY >= sHeight || pixY < 0) {
+        return FALSE;
+    }
+    if (pixX >= sWidth) {
+        return FALSE;
+    }
+
+    return TRUE;
+}
+
 R2dTarget R2dTargetFromSurface(R2dSurface *rs) {
     R2dTarget rt;
     rt.data = (u32 *)rs->bmpData;
@@ -77,7 +88,7 @@ void R2dClearTarget(R2dTarget *rt, u32 ARGB) {
     }
 }
 
-void R2dClearSquare(R2dTarget *rt, i32 topLeftX, i32 topLeftY, u32 ARGB, i32 width, i32 height) {
+void R2dDebugClearSquare(R2dTarget *rt, i32 topLeftX, i32 topLeftY, u32 ARGB, i32 width, i32 height) {
     i32 scStart = topLeftX + (rt->width * topLeftY);
 
     i32 surfaceW = rt->width;
@@ -87,6 +98,10 @@ void R2dClearSquare(R2dTarget *rt, i32 topLeftX, i32 topLeftY, u32 ARGB, i32 wid
         i32 sqX = i % width;
         i32 sqY = i / width;
         i32 currPixPos = scStart + sqX + (sqY * surfaceW);
+
+        if (FALSE == _PixelOnSurface(rt->width, rt->height, topLeftX + sqX, topLeftY + sqY)) {
+            continue;
+        }
 
         rt->data[currPixPos] = ARGB;
     }
@@ -102,6 +117,10 @@ void R2dRenderSquare(R2dTarget *rt, i32 topLeftX, i32 topLeftY, u32 *colorData, 
         i32 sqX = i % width;
         i32 sqY = i / width;
         i32 currPixPos = scStart + sqX + (sqY * surfaceW);
+
+        if (FALSE == _PixelOnSurface(rt->width, rt->height, topLeftX + sqX, topLeftY + sqY)) {
+            continue;
+        }
 
         u32 c = colorData[i];
         rt->data[currPixPos] = c;
