@@ -4,6 +4,124 @@
 
 #include "Windows.h"
 
+#define BMP_IHEADER_SIZE 14
+
+//ARGB color
+typedef struct ImgResource {
+    u32 width;
+    u32 height;
+    u8 *pixels;
+} ImgResource;
+
+typedef u64 BMP_WRITE_ERR;
+
+#define BMP_WRITE_ERR_NO_ERR             0x0000
+#define BMP_WRITE_ERR_OPEN_FILE          0x0001
+#define BMP_WRITE_ERR_ALLOCATION         0x0002
+#define BMP_WRITE_ERR_WRITE_FILE         0x0003
+
+usize InitGeneralBmpHeader(void *fileStart, u32 fileSize, u32 pixelArrayOffset) {
+    u8 *writeHead = (u8 *)fileStart;
+    usize offset = 0;
+
+    // First 2 bytes must be the letters BM to identify this as a "moddern" bmp file
+    writeHead[0] = 'B';
+    writeHead[1] = 'M';
+
+    offset += 2;
+
+    // 4 bytes describing the bmp files size in bytes
+    *(u32 *)(writeHead + offset) = fileSize;
+
+    offset += 4;
+
+    // 2 * 2 byte fields reserved for information from the appication that created the image, left as 0 here
+    *(u32 *)(writeHead + offset) = 0;
+
+    offset += 4;
+
+    // Offset from the start of the file(I really hope its the start) to the start of the pixel array
+    *(u32 *)(writeHead + offset) = pixelArrayOffset;
+
+    offset += 4;
+
+    return offset;
+}
+
+usize InitDIBHeader(void *dibStart, i32 width, i32 height) {
+    ZeroMem(dibStart, sizeof(BITMAPV4HEADER));
+    BITMAPV4HEADER *dibH = (BITMAPV4HEADER *)dibStart;
+
+    dibH->bV4Size = sizeof(BITMAPV4HEADER);
+    dibH->bV4Width = width;
+    dibH->bV4Height = height;
+    dibH->bV4Planes = 1;
+    dibH->bV4BitCount = 32;
+
+    dibH->bV4V4Compression = BI_BITFIELDS;
+    dibH->bV4SizeImage = 0;
+    dibH->bV4XPelsPerMeter = 0;
+    dibH->bV4YPelsPerMeter = 0;
+    dibH->bV4ClrUsed = 0;
+    dibH->bV4ClrImportant = 0;
+
+    dibH->bV4RedMask = 0xff0000;
+    dibH->bV4GreenMask = 0xff00;
+    dibH->bV4BlueMask = 0xff;
+    dibH->bV4AlphaMask = 0xff000000u;
+
+    return sizeof(BITMAPV4HEADER);
+}
+
+BMP_WRITE_ERR BMPIOPixelsToBmp(AL *al, u8 **mem, usize *memSize, u8 *pixelData, usize pixelDataSize, usize width, usize height) {
+    const u32 fileSize = BMP_IHEADER_SIZE + sizeof(BITMAPV4HEADER) + pixelDataSize;
+
+    *mem = Alloc(al, fileSize);
+    if (NULL == mem) {
+        return BMP_WRITE_ERR_ALLOCATION;
+    }
+    u8 *writeHead = *mem;
+    *memSize = fileSize;
+
+    writeHead += InitGeneralBmpHeader(writeHead, fileSize, BMP_IHEADER_SIZE + sizeof(BITMAPV4HEADER));
+
+    ZeroMem(writeHead, sizeof(BITMAPV4HEADER));
+
+    //DIB header
+    writeHead += InitDIBHeader(writeHead, width, height);
+
+    //Pixel array
+    CopyMem(writeHead, pixelData, pixelDataSize);
+
+    return BMP_WRITE_ERR_NO_ERR;
+}
+
+BMP_WRITE_ERR BMPIOWriteToFile(const char *fileName, void *data, usize dataSize) {
+    BMP_WRITE_ERR result = BMP_WRITE_ERR_NO_ERR;
+    const usize pixStride = sizeof(u32);
+
+    HANDLE fh = CreateFileA(fileName, GENERIC_WRITE, FILE_SHARE_WRITE, NULL, CREATE_ALWAYS, 0, NULL);
+    if (INVALID_HANDLE_VALUE == fh) {
+        result = BMP_WRITE_ERR_OPEN_FILE;
+        goto CLEANUP;
+    }
+
+    DWORD bytesWritten = 0;
+    if (FALSE == WriteFile(fh, data, dataSize, &bytesWritten, NULL)) {
+        result = BMP_WRITE_ERR_WRITE_FILE;
+        goto CLEANUP;
+    }
+
+    if (bytesWritten != dataSize) {
+        result = BMP_WRITE_ERR_WRITE_FILE;
+        goto CLEANUP;
+    }
+
+CLEANUP:
+    CloseHandle(fh);
+    return result;
+}
+
 typedef u64 BMP_READ_ERR;
 
 #define BMP_READ_ERR_NO_ERR                             0x0000
@@ -16,14 +134,8 @@ typedef u64 BMP_READ_ERR;
 #define BMP_READ_ERR_FAILED_TO_GET_FILE_INFO            0x0007
 
 #define IMG_RESOURCE_PIXEL_SIZE sizeof(u32)
-//ARGB color
-typedef struct ImgResource {
-    u32 width;
-    u32 height;
-    u8 *pixels;
-} ImgResource;
 
-BMP_READ_ERR ReadBMPFromFile(AL *al, const char *filePath, ImgResource **data) {
+BMP_READ_ERR BMPIOReadFromFile(AL *readAlloc, AL *saveAlloc, const char *filePath, ImgResource **data) {
     BMP_READ_ERR result = BMP_READ_ERR_NO_ERR;
 
     HANDLE fh = CreateFileA(filePath, GENERIC_READ, FILE_SHARE_READ, NULL, OPEN_EXISTING, 0, NULL);
@@ -37,7 +149,7 @@ BMP_READ_ERR ReadBMPFromFile(AL *al, const char *filePath, ImgResource **data) {
         goto CLOSE_FH;
     }
 
-    u8 *fb = Alloc(al, fs.QuadPart);
+    u8 *fb = Alloc(readAlloc, fs.QuadPart);
     DWORD bytesRead = 0;
     if (FALSE == ReadFile(fh, fb, fs.QuadPart, &bytesRead, NULL)) {
         goto CLEANUP;
@@ -68,7 +180,7 @@ BMP_READ_ERR ReadBMPFromFile(AL *al, const char *filePath, ImgResource **data) {
 
     const usize pixCount = bmpHeader->bV4SizeImage;
     const usize dataSize = sizeof(ImgResource) + (sizeof(u32) * pixCount);
-    *data = Alloc(al, dataSize);
+    *data = Alloc(saveAlloc, dataSize);
 
     ImgResource *re = *data;
     re->width  = bmpHeader->bV4Width;
@@ -85,7 +197,7 @@ BMP_READ_ERR ReadBMPFromFile(AL *al, const char *filePath, ImgResource **data) {
     }
 
 CLEANUP:
-    Free(al, fb, fs.QuadPart);
+    Free(readAlloc, fb, fs.QuadPart);
 CLOSE_FH:
     CloseHandle(fh);
     return result;
