@@ -24,12 +24,18 @@ static BOOL Running = TRUE;
 static KeyboardKey Keyboard[KEYBOARD_SIZE];
 static R2dSurface RenderSurface;
 
-void OnResize(i32 width, i32 height) {
-    if (NULL != RenderSurface.bmpData) {
-        R2dDelTestRenderSurface(&RenderSurface);
-    }
+void OnResize(u64 resizeType, i32 width, i32 height) {
+    switch (resizeType) {
+        case SIZE_MINIMIZED: {
+        } break;
+        default: {
+            if (NULL != RenderSurface.bmpData) {
+                R2dDelTestRenderSurface(&RenderSurface);
+            }
 
-    RenderSurface = R2dMkTestRenderSurface(RenderSurface.allocator, width, height);
+            RenderSurface = R2dMkTestRenderSurface(RenderSurface.allocator, width, height);
+        }
+    }
 }
 
 // Custom handeling function for OS messages
@@ -51,7 +57,7 @@ BOOL HandleWindowMsg(HWND window, UINT msg, WPARAM wParam, LPARAM lParam) {
         } break;
         case WM_SIZE: {
             //TODO: Handle type of size msg (wParam)
-            OnResize(LOWORD(lParam), HIWORD(lParam));
+            OnResize(wParam, LOWORD(lParam), HIWORD(lParam));
         } break;
         case WM_DESTROY: {
             Running = FALSE;
