@@ -2,14 +2,19 @@
 
 #include "cutils/UtTypes.h"
 
+#include "cutils/UtMath.c"
 #include "cutils/UtAlloc.c"
+#include "cutils/UtString.c"
 
 
 #include "KeyboardInput.h"
 
 #include "QPCTimings.c"
+
 #include "Win32Input.c"
+
 #include "Render2DCpu.c"
+#include "BMPIO.c"
 
 #define WIN_CLASS_NAME "SE_WC"
 
@@ -103,13 +108,7 @@ void ApplicationLoop(HWND winHandle, AL *sysAlloc, i64 targetFps) {
     QPCTimings timings = MkQPCTimings();
     InitKeyboard(Keyboard);
 
-    u32 *color = Alloc(sysAlloc, sizeof(u32) * 10000);
-    for (usize i = 0; i < 10000; i++) {
-        color[i] = 0xFFEAEAEA;
-    }
-
     R2dTarget renderTarget;
-
     MSG msg;
     while (Running) {
 
@@ -124,8 +123,7 @@ void ApplicationLoop(HWND winHandle, AL *sysAlloc, i64 targetFps) {
 
         // Render test
         R2dClearTarget(&renderTarget, 0xFFAAFFAA);
-        R2dRenderSquare(&renderTarget, 10, 10, color, 100, 100);
-        R2dClearSquare(&renderTarget, 500, 400, 0xFFEE0000, 300, 300);
+        R2dDebugClearSquare(&renderTarget, 500, 400, 0xFFEE0000, 300, 300);
 
         ApplicationPaint(winHandle);
         
