@@ -189,6 +189,7 @@ BMP_READ_ERR BMPIOReadFromFile(AL *readAlloc, AL *saveAlloc, const char *filePat
 
     u32 offsetToPix = *(u32 *)(fb + 0x0A);
     u32 *pixArray = (u32 *)(fb + offsetToPix);
+    //TODO: This is incorrect, needs to be mask & pixel then shift down to least significant byte
     for (usize i = 0; i < re->width * re->height; i++) {
         re->pixels[(i * IMG_RESOURCE_PIXEL_SIZE) + 0] = bmpHeader->bV4AlphaMask | pixArray[i];
         re->pixels[(i * IMG_RESOURCE_PIXEL_SIZE) + 1] = bmpHeader->bV4RedMask   | pixArray[i];
