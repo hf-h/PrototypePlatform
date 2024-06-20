@@ -20,6 +20,61 @@
 
 #define PLACEHOLDER_TARGET_FPS 60
 
+////Mouse controlled box select test / example///////
+
+// not a good way to implement it generally
+typedef struct SelectionRect {
+    i32 sx, sy, ex, ey;
+    i32 top, left;
+    i32 width, height;
+} SelectionRect;
+
+void ProcessSelection(SelectionRect *rect) {
+    if (rect->sx < rect->ex) {
+        rect->left = rect->sx;
+        rect->width = rect->ex - rect->sx;
+    } else {
+        rect->left = rect->ex;
+        rect->width = rect->sx - rect->ex;
+    }
+
+    if (rect->sy < rect->ey) {
+        rect->top = rect->sy;
+        rect->height = rect->ey - rect->sy;
+    } else {
+        rect->top = rect->ey;
+        rect->height = rect->sy - rect->ey;
+    }
+}
+
+static BOOL InSelectionMode = FALSE;
+static SelectionRect Selection = {0};
+
+void DebugOnLMouseDown(i32 x, i32 y) {
+    InSelectionMode = TRUE;
+
+    Selection.sx = x;
+    Selection.sy = y;
+    Selection.ex = 0;
+    Selection.ey = 0;
+}
+
+void DebugOnLMouseUp(i32 x, i32 y) {
+    InSelectionMode = FALSE;
+
+    Selection.ex = x;
+    Selection.ey = y;
+    ProcessSelection(&Selection);
+}
+
+void DebugOnMouseMove(i32 x, i32 y) {
+    Selection.ex = x;
+    Selection.ey = y;
+    ProcessSelection(&Selection);
+}
+
+//////////////////////////////////////////////////
+
 static BOOL Running = TRUE;
 static KeyboardKey Keyboard[KEYBOARD_SIZE];
 static R2dSurface RenderSurface;
@@ -39,7 +94,7 @@ void OnResize(u64 resizeType, i32 width, i32 height) {
 }
 
 // Custom handeling function for OS messages
-BOOL HandleWindowMsg(HWND window, UINT msg, WPARAM wParam, LPARAM lParam) {
+BOOL HandleWindowMsg(HWND window, UINT msg, WPARAM wParam, LPARAM lParam, LRESULT *result) {
     BOOL handled = TRUE;
 
     switch (msg) {
@@ -56,9 +111,24 @@ BOOL HandleWindowMsg(HWND window, UINT msg, WPARAM wParam, LPARAM lParam) {
             KeyboardKeyReleased(Keyboard, wParam);
         } break;
         case WM_SIZE: {
-            //TODO: Handle type of size msg (wParam)
             OnResize(wParam, LOWORD(lParam), HIWORD(lParam));
         } break;
+        case WM_LBUTTONDOWN: {
+            DebugOnLMouseDown(LOWORD(lParam), HIWORD(lParam));
+            *result = 0;
+        } break;
+        case WM_LBUTTONUP: {
+            DebugOnLMouseUp(LOWORD(lParam), HIWORD(lParam));
+            *result = 0;
+        } break;
+        case WM_MOUSEMOVE: {
+            if (InSelectionMode) {
+                DebugOnMouseMove(LOWORD(lParam), HIWORD(lParam));
+                *result = 0;
+            } else {
+                handled = FALSE;
+            }
+        } break;            
         case WM_DESTROY: {
             Running = FALSE;
         } break;
@@ -77,7 +147,7 @@ BOOL HandleWindowMsg(HWND window, UINT msg, WPARAM wParam, LPARAM lParam) {
 LRESULT CALLBACK WinMsgCallback(HWND window, UINT msg, WPARAM wParam, LPARAM lParam) {
     LRESULT result = 1;
 
-    if (FALSE == HandleWindowMsg(window, msg, wParam, lParam)) {
+    if (FALSE == HandleWindowMsg(window, msg, wParam, lParam, &result)) {
         // If we did not handle the msg leave it to the default window proc
         result = DefWindowProcA(window, msg, wParam, lParam);
     }
@@ -130,6 +200,8 @@ void ApplicationLoop(HWND winHandle, AL *sysAlloc, i64 targetFps) {
         // Render test
         R2dClearTarget(&renderTarget, 0xFFAAFFAA);
         R2dDebugClearSquare(&renderTarget, 500, 400, 0xFFEE0000, 300, 300);
+
+        R2dDebugClearSquare(&renderTarget, Selection.left, Selection.top, 0xFFEE00FF, Selection.width, Selection.height);        
 
         ApplicationPaint(winHandle);
         
