@@ -135,6 +135,21 @@ typedef u64 BMP_READ_ERR;
 
 #define IMG_RESOURCE_PIXEL_SIZE sizeof(u32)
 
+DWORD _ShiftsToFirstByte(DWORD maskVal) {
+    switch (maskVal) {
+        case 0x000000FF:
+            return 0;
+        case 0x0000FF00:
+            return 0x8;
+        case 0x00FF0000:
+            return 0x10;
+        case 0xFF000000:
+            return 0x18;
+    }
+
+    return 0;
+}
+
 BMP_READ_ERR BMPIOReadFromFile(AL *readAlloc, AL *saveAlloc, const char *filePath, ImgResource **data) {
     BMP_READ_ERR result = BMP_READ_ERR_NO_ERR;
 
@@ -189,12 +204,42 @@ BMP_READ_ERR BMPIOReadFromFile(AL *readAlloc, AL *saveAlloc, const char *filePat
 
     u32 offsetToPix = *(u32 *)(fb + 0x0A);
     u32 *pixArray = (u32 *)(fb + offsetToPix);
-    //TODO: This is incorrect, needs to be mask & pixel then shift down to least significant byte
+
+    usize pixX = 0;
+    usize pixY = re->height - 1;
+
+    usize bmpPixIdx = pixX + (pixY * re->width);
+
     for (usize i = 0; i < re->width * re->height; i++) {
-        re->pixels[(i * IMG_RESOURCE_PIXEL_SIZE) + 0] = bmpHeader->bV4AlphaMask | pixArray[i];
-        re->pixels[(i * IMG_RESOURCE_PIXEL_SIZE) + 1] = bmpHeader->bV4RedMask   | pixArray[i];
-        re->pixels[(i * IMG_RESOURCE_PIXEL_SIZE) + 2] = bmpHeader->bV4GreenMask | pixArray[i];
-        re->pixels[(i * IMG_RESOURCE_PIXEL_SIZE) + 3] = bmpHeader->bV4BlueMask  | pixArray[i];
+        DWORD colorValue;
+        DWORD shiftAmount;
+
+        colorValue = bmpHeader->bV4AlphaMask & pixArray[bmpPixIdx];
+        shiftAmount = _ShiftsToFirstByte(bmpHeader->bV4AlphaMask);
+
+        re->pixels[(i * IMG_RESOURCE_PIXEL_SIZE) + 3] = (u8)(colorValue >> shiftAmount);
+
+        colorValue = bmpHeader->bV4RedMask   & pixArray[bmpPixIdx];
+        shiftAmount = _ShiftsToFirstByte(bmpHeader->bV4RedMask);
+
+        re->pixels[(i * IMG_RESOURCE_PIXEL_SIZE) + 2] = (u8)(colorValue >> shiftAmount);
+
+        colorValue = bmpHeader->bV4GreenMask & pixArray[bmpPixIdx];
+        shiftAmount = _ShiftsToFirstByte(bmpHeader->bV4GreenMask);
+
+        re->pixels[(i * IMG_RESOURCE_PIXEL_SIZE) + 1] = (u8)(colorValue >> shiftAmount);
+
+        colorValue = bmpHeader->bV4BlueMask  & pixArray[bmpPixIdx];
+        shiftAmount = _ShiftsToFirstByte(bmpHeader->bV4BlueMask);
+
+        re->pixels[(i * IMG_RESOURCE_PIXEL_SIZE) + 0] = (u8)(colorValue >> shiftAmount);
+
+        pixX += 1;
+        pixY -= pixX / re->width;
+
+        pixX = pixX % re->width;
+
+        bmpPixIdx = pixX + (pixY * re->width);
     }
 
 CLEANUP:
