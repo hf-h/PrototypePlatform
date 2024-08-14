@@ -13,7 +13,7 @@
 
 #include "Win32Input.c"
 
-#include "Render2DCpu.c"
+#include "Win32Render2dCpu.c"
 #include "BMPIO.c"
 
 #define WIN_CLASS_NAME "SE_WC"
@@ -78,6 +78,7 @@ void DebugOnMouseMove(i32 x, i32 y) {
 static BOOL Running = TRUE;
 static KeyboardKey Keyboard[KEYBOARD_SIZE];
 static R2dSurface RenderSurface;
+static R2dTarget RenderTarget;
 
 void OnResize(u64 resizeType, i32 width, i32 height) {
     switch (resizeType) {
@@ -87,8 +88,12 @@ void OnResize(u64 resizeType, i32 width, i32 height) {
             if (NULL != RenderSurface.bmpData) {
                 R2dDelTestRenderSurface(&RenderSurface);
             }
+            if (NULL != RenderTarget.data) {
+                R2dDelRenderTarget(&RenderTarget);
+            }
 
             RenderSurface = R2dMkTestRenderSurface(RenderSurface.allocator, width, height);
+            RenderTarget = R2dMkRenderTarget(RenderTarget.allocator, &RenderSurface);
         }
     }
 }
@@ -101,7 +106,7 @@ BOOL HandleWindowMsg(HWND window, UINT msg, WPARAM wParam, LPARAM lParam, LRESUL
         case WM_PAINT: {
             PAINTSTRUCT ps;
             HDC deviceContext = BeginPaint(window, &ps);
-            R2dPaintWindow(&RenderSurface, deviceContext, &ps.rcPaint);
+            R2dPaintWindow(&RenderTarget, &RenderSurface, deviceContext, &ps.rcPaint);
             EndPaint(window, &ps);            
         } break;
         case WM_KEYDOWN: {
@@ -175,7 +180,7 @@ void ApplicationPaint(HWND winHandle) {
     RECT clientRect;
     GetClientRect(winHandle, &clientRect);
 
-    R2dPaintWindow(&RenderSurface, deviceContext, &clientRect);
+    R2dPaintWindow(&RenderTarget, &RenderSurface, deviceContext, &clientRect);
 
     ReleaseDC(winHandle, deviceContext);
 }
@@ -184,7 +189,22 @@ void ApplicationLoop(HWND winHandle, AL *sysAlloc, i64 targetFps) {
     QPCTimings timings = MkQPCTimings();
     InitKeyboard(Keyboard);
 
-    R2dTarget renderTarget;
+    AL temp_alloc = AlMakeArena(sysAlloc, Megabyte(10));
+
+    // Asset loading tests
+    Sprite2D *sprite;
+    BMPIOReadFromFile(&temp_alloc, sysAlloc, "test.bmp", &sprite);
+
+    //Clear(&temp_alloc);
+
+    PixColor bgColor = PixColorFromHex(0xFFAAFFAA);
+
+    PixColor sq1Color = PixColorFromHex(0xFFFF0000);
+    PixColor sq2Color = PixColorFromHex(0xFF00FF00);
+    PixColor sq3Color = PixColorFromHex(0xFF0000FF);
+
+    PixColor selectionColor = PixColorFromHex(0xFFEE00FF);
+
     MSG msg;
     while (Running) {
 
@@ -195,13 +215,16 @@ void ApplicationLoop(HWND winHandle, AL *sysAlloc, i64 targetFps) {
             WinMsgCallback(msg.hwnd, msg.message, msg.wParam, msg.lParam);
         }
 
-        renderTarget = R2dTargetFromSurface(&RenderSurface);
-
         // Render test
-        R2dClearTarget(&renderTarget, 0xFFAAFFAA);
-        R2dDebugClearSquare(&renderTarget, 500, 400, 0xFFEE0000, 300, 300);
+        R2dClearTarget(&RenderTarget, bgColor);
+        R2dDebugClearSquare(&RenderTarget, 500, 400,  sq1Color, 300, 300);
+        R2dDebugClearSquare(&RenderTarget, 800, 400,  sq2Color, 300, 300);
+        R2dDebugClearSquare(&RenderTarget, 1100, 400, sq3Color, 300, 300);
 
-        R2dDebugClearSquare(&renderTarget, Selection.left, Selection.top, 0xFFEE00FF, Selection.width, Selection.height);        
+        R2dRenderSquare(&RenderTarget, 0, 0, sprite->data, sprite->width, sprite->height);
+        R2dDebugRenderSpriteWithSetAlpha(&RenderTarget, 1000, 0, *sprite, 0.4f);
+
+        R2dDebugClearSquare(&RenderTarget, Selection.left, Selection.top, selectionColor, Selection.width, Selection.height);        
 
         ApplicationPaint(winHandle);
         
@@ -215,6 +238,7 @@ int APIENTRY WinMain(HINSTANCE instance, HINSTANCE previousInstance, LPSTR cmd, 
     AL sysAlloc = AlMakeWin32Alloc();
 
     RenderSurface = R2dMkTestRenderSurface(&sysAlloc, 100, 100);
+    RenderTarget = R2dMkRenderTarget(&sysAlloc, &RenderSurface);
 
     WNDCLASS wc = {0};
     wc.style = CS_OWNDC | CS_HREDRAW | CS_VREDRAW;

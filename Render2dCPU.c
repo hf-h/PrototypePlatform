@@ -1,27 +1,32 @@
 #include "cutils/UtTypes.h"
 #include "cutils/UtAlloc.h"
+
 #include "Win32Defs.h"
+#include "Render2dCPUDefs.h"
 
 #define BYTES_PER_PIXEL 4;
 
-typedef struct R2dSurface {
-    BITMAPINFO  bmpInfo;
-    void        *bmpData;
-    usize       bmpDataSize;
-    HBITMAP     bmpHandle;
-    HDC         bmpDeviceContext;
-    i32         bmpWidth;
-    i32         bmpHeight;
-    AL          *allocator;
-} R2dSurface;
+PixColor PixColorFromHex(u32 ARGB) {
+    PixColor pc;
 
-typedef struct R2dTarget {
-    usize size;
-    u32 *data;
-    
-    u32 height;
-    u32 width;
-} R2dTarget;
+    pc.A = ((f32)((ARGB & 0xFF000000) >> 24)) / 255.f;
+    pc.R = ((f32)((ARGB & 0x00FF0000) >> 16)) / 255.f;
+    pc.G = ((f32)((ARGB & 0x0000FF00) >> 8)) / 255.f;
+    pc.B = ((f32)(ARGB  & 0x000000FF)) / 255.f;
+
+    return pc;
+}
+
+u32 HexFromPixColor(PixColor col) {
+    u32 hex = 0;
+
+    hex = hex | (u32)(col.A * 255.f) << 24;
+    hex = hex | (u32)(col.R * 255.f) << 16;
+    hex = hex | (u32)(col.G * 255.f) << 8;
+    hex = hex | (u32)(col.B * 255.f);
+
+    return hex;
+}
 
 BOOL _PixelOnSurface(u32 sWidth, u32  sHeight, i32 pixX, i32 pixY) {
     if (pixY >= sHeight || pixY < 0) {
@@ -34,61 +39,23 @@ BOOL _PixelOnSurface(u32 sWidth, u32  sHeight, i32 pixX, i32 pixY) {
     return TRUE;
 }
 
-R2dTarget R2dTargetFromSurface(R2dSurface *rs) {
-    R2dTarget rt;
-    rt.data = (u32 *)rs->bmpData;
-    rt.size = rs->bmpDataSize;
-    rt.width = (u32)rs->bmpWidth;
-    rt.height = (u32)rs->bmpHeight;
+PixColor _ColorBlending(PixColor ApplyColor, PixColor ReceiveColor, f32 alpha) {
+    PixColor pc;
 
-    return rt;
+    pc.R = alpha * ApplyColor.R + (1 - alpha) * ReceiveColor.R;
+    pc.G = alpha * ApplyColor.G + (1 - alpha) * ReceiveColor.G;
+    pc.B = alpha * ApplyColor.B + (1 - alpha) * ReceiveColor.B;
+
+    return pc;
 }
 
-void R2dDelTestRenderSurface(R2dSurface *rs) {
-    Free(rs->allocator, rs->bmpData, rs->bmpDataSize);
-}
-
-R2dSurface R2dMkTestRenderSurface(AL *allocator, i32 width, i32 height) {
-    R2dSurface rs;
-
-    rs.allocator = allocator;
-
-    BITMAPINFO bitmapInfo;
-    bitmapInfo.bmiHeader.biSize = sizeof(bitmapInfo.bmiHeader);
-    bitmapInfo.bmiHeader.biWidth = width;
-    bitmapInfo.bmiHeader.biHeight = -height;
-    bitmapInfo.bmiHeader.biPlanes = 1;
-    bitmapInfo.bmiHeader.biBitCount = 32;
-    bitmapInfo.bmiHeader.biCompression = BI_RGB;
-
-    rs.bmpInfo = bitmapInfo;
-
-    rs.bmpDataSize = (width * height) * BYTES_PER_PIXEL;
-    rs.bmpData = Alloc(rs.allocator, rs.bmpDataSize);
-
-    rs.bmpWidth = width;
-    rs.bmpHeight = height;
-
-    return rs;
-}
-
-void R2dPaintWindow(R2dSurface *rs, HDC deviceContext, RECT *windowRect) {
-    int windowWidth = windowRect->right - windowRect->left;
-    int windowHeight = windowRect->bottom - windowRect->top;
-    StretchDIBits(deviceContext,
-                  0, 0, windowWidth, windowHeight,
-                  0, 0, rs->bmpWidth, rs->bmpHeight,
-                  rs->bmpData, &rs->bmpInfo,
-                  DIB_RGB_COLORS, SRCCOPY);
-}
-
-void R2dClearTarget(R2dTarget *rt, u32 ARGB) {
+void R2dClearTarget(R2dTarget *rt, PixColor color) {
     for (usize i = 0; i < rt->width * rt->height; i++) {
-        rt->data[i] = ARGB;
+        rt->data[i] = color;
     }
 }
 
-void R2dDebugClearSquare(R2dTarget *rt, i32 topLeftX, i32 topLeftY, u32 ARGB, i32 width, i32 height) {
+void R2dDebugClearSquare(R2dTarget *rt, i32 topLeftX, i32 topLeftY, PixColor color, i32 width, i32 height) {
     i32 scStart = topLeftX + (rt->width * topLeftY);
 
     i32 surfaceW = rt->width;
@@ -103,11 +70,31 @@ void R2dDebugClearSquare(R2dTarget *rt, i32 topLeftX, i32 topLeftY, u32 ARGB, i3
             continue;
         }
 
-        rt->data[currPixPos] = ARGB;
+        rt->data[currPixPos] = color;
     }
 }
 
-void R2dRenderSquare(R2dTarget *rt, i32 topLeftX, i32 topLeftY, u32 *colorData, i32 width, i32 height) {
+void R2dDebugRenderSpriteWithSetAlpha(R2dTarget *rt, i32 topLeftX, i32 topLeftY, Sprite2D sprite, f32 alpha) {
+    i32 scStart = topLeftX + (rt->width * topLeftY);
+
+    i32 surfaceW = rt->width;
+    i32 surfaceH = rt->height;
+
+    for (i32 i = 0; i < sprite.width * sprite.height; i++) {
+        i32 sqX = i % sprite.width;
+        i32 sqY = i / sprite.width;
+        i32 currPixPos = scStart + sqX + (sqY * surfaceW);
+
+        if (FALSE == _PixelOnSurface(rt->width, rt->height, topLeftX + sqX, topLeftY + sqY)) {
+            continue;
+        }
+
+        PixColor c = sprite.data[i];
+        rt->data[currPixPos] = _ColorBlending(c, rt->data[currPixPos], alpha);
+    }
+}
+
+void R2dRenderSquare(R2dTarget *rt, i32 topLeftX, i32 topLeftY, PixColor *colorData, i32 width, i32 height) {
     i32 scStart = topLeftX + (rt->width * topLeftY);
 
     i32 surfaceW = rt->width;
@@ -122,7 +109,28 @@ void R2dRenderSquare(R2dTarget *rt, i32 topLeftX, i32 topLeftY, u32 *colorData, 
             continue;
         }
 
-        u32 c = colorData[i];
-        rt->data[currPixPos] = c;
+        PixColor c = colorData[i];
+        rt->data[currPixPos] = _ColorBlending(c, rt->data[currPixPos], c.A);
     }
 }
+
+void R2dRenderSprite(R2dTarget *rt, i32 topLeftX, i32 topLeftY, Sprite2D sprite) {
+    i32 scStart = topLeftX + (rt->width * topLeftY);
+
+    i32 surfaceW = rt->width;
+    i32 surfaceH = rt->height;
+
+    for (i32 i = 0; i < sprite.width * sprite.height; i++) {
+        i32 sqX = i % sprite.width;
+        i32 sqY = i / sprite.width;
+        i32 currPixPos = scStart + sqX + (sqY * surfaceW);
+
+        if (FALSE == _PixelOnSurface(rt->width, rt->height, topLeftX + sqX, topLeftY + sqY)) {
+            continue;
+        }
+
+        PixColor c = sprite.data[i];
+        rt->data[currPixPos] = _ColorBlending(c, rt->data[currPixPos], c.A);
+    }
+}
+

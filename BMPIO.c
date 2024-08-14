@@ -2,16 +2,11 @@
 #include "cutils/UtMem.h"
 #include "cutils/UtAlloc.h"
 
+#include "Render2dCPUDefs.h"
+
 #include "Windows.h"
 
 #define BMP_IHEADER_SIZE 14
-
-//ARGB color
-typedef struct ImgResource {
-    u32 width;
-    u32 height;
-    u8 *pixels;
-} ImgResource;
 
 typedef u64 BMP_WRITE_ERR;
 
@@ -133,8 +128,6 @@ typedef u64 BMP_READ_ERR;
 #define BMP_READ_ERR_INCOMPATIBLE_FORMAT                0x0006
 #define BMP_READ_ERR_FAILED_TO_GET_FILE_INFO            0x0007
 
-#define IMG_RESOURCE_PIXEL_SIZE sizeof(u32)
-
 DWORD _ShiftsToFirstByte(DWORD maskVal) {
     switch (maskVal) {
         case 0x000000FF:
@@ -150,7 +143,7 @@ DWORD _ShiftsToFirstByte(DWORD maskVal) {
     return 0;
 }
 
-BMP_READ_ERR BMPIOReadFromFile(AL *readAlloc, AL *saveAlloc, const char *filePath, ImgResource **data) {
+BMP_READ_ERR BMPIOReadFromFile(AL *readAlloc, AL *saveAlloc, const char *filePath, Sprite2D **data) {
     BMP_READ_ERR result = BMP_READ_ERR_NO_ERR;
 
     HANDLE fh = CreateFileA(filePath, GENERIC_READ, FILE_SHARE_READ, NULL, OPEN_EXISTING, 0, NULL);
@@ -194,52 +187,52 @@ BMP_READ_ERR BMPIOReadFromFile(AL *readAlloc, AL *saveAlloc, const char *filePat
     }
 
     const usize pixCount = bmpHeader->bV4SizeImage;
-    const usize dataSize = sizeof(ImgResource) + (sizeof(u32) * pixCount);
+    const usize dataSize = sizeof(Sprite2D) + (sizeof(PixColor) * pixCount);
     *data = Alloc(saveAlloc, dataSize);
 
-    ImgResource *re = *data;
-    re->width  = bmpHeader->bV4Width;
-    re->height = bmpHeader->bV4Height;
-    re->pixels = (u8 *)(*data) + sizeof(ImgResource);
+    Sprite2D *sp = *data;
+    sp->width  = bmpHeader->bV4Width;
+    sp->height = bmpHeader->bV4Height;
+    sp->data = (PixColor *)(*data) + sizeof(Sprite2D);
 
     u32 offsetToPix = *(u32 *)(fb + 0x0A);
     u32 *pixArray = (u32 *)(fb + offsetToPix);
 
     usize pixX = 0;
-    usize pixY = re->height - 1;
+    usize pixY = sp->height - 1;
 
-    usize bmpPixIdx = pixX + (pixY * re->width);
+    usize bmpPixIdx = pixX + (pixY * sp->width);
 
-    for (usize i = 0; i < re->width * re->height; i++) {
+    for (usize i = 0; i < sp->width * sp->height; i++) {
         DWORD colorValue;
         DWORD shiftAmount;
 
         colorValue = bmpHeader->bV4AlphaMask & pixArray[bmpPixIdx];
         shiftAmount = _ShiftsToFirstByte(bmpHeader->bV4AlphaMask);
 
-        re->pixels[(i * IMG_RESOURCE_PIXEL_SIZE) + 3] = (u8)(colorValue >> shiftAmount);
+        sp->data[i].A = (f32)(colorValue >> shiftAmount) / 255.f;
 
         colorValue = bmpHeader->bV4RedMask   & pixArray[bmpPixIdx];
         shiftAmount = _ShiftsToFirstByte(bmpHeader->bV4RedMask);
 
-        re->pixels[(i * IMG_RESOURCE_PIXEL_SIZE) + 2] = (u8)(colorValue >> shiftAmount);
+        sp->data[i].R = (f32)(colorValue >> shiftAmount) / 255.f;
 
         colorValue = bmpHeader->bV4GreenMask & pixArray[bmpPixIdx];
         shiftAmount = _ShiftsToFirstByte(bmpHeader->bV4GreenMask);
 
-        re->pixels[(i * IMG_RESOURCE_PIXEL_SIZE) + 1] = (u8)(colorValue >> shiftAmount);
+        sp->data[i].G = (f32)(colorValue >> shiftAmount) / 255.f;
 
         colorValue = bmpHeader->bV4BlueMask  & pixArray[bmpPixIdx];
         shiftAmount = _ShiftsToFirstByte(bmpHeader->bV4BlueMask);
 
-        re->pixels[(i * IMG_RESOURCE_PIXEL_SIZE) + 0] = (u8)(colorValue >> shiftAmount);
+        sp->data[i].B = (f32)(colorValue >> shiftAmount) / 255.f;
 
         pixX += 1;
-        pixY -= pixX / re->width;
+        pixY -= pixX / sp->width;
 
-        pixX = pixX % re->width;
+        pixX = pixX % sp->width;
 
-        bmpPixIdx = pixX + (pixY * re->width);
+        bmpPixIdx = pixX + (pixY * sp->width);
     }
 
 CLEANUP:
